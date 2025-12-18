@@ -15,6 +15,7 @@ FOLDER_TREE.md
 # Vault usage input folders
 2023_2024/
 2024_2025/
+diff*/
 diff/
 input/
 
@@ -159,4 +160,3 @@ vv*.tar.gz
 .DS_Store
 .idea/
 .vscode/
-/scripts/*.sh
