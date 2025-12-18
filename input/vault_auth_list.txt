@@ -1,0 +1,6 @@
+Path          Type        Accessor                  Description                Version
+----          ----        --------                  -----------                -------
+jwt/          jwt         auth_jwt_449f055c         n/a                        n/a
+okta_oidc/    oidc        auth_oidc_c97a7022        n/a                        n/a
+token/        token       auth_token_e096157f       token based credentials    n/a
+userpass/     userpass    auth_userpass_28318f9e    n/a                        n/a

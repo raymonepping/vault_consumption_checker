@@ -1,0 +1,154 @@
+"namespace","mount_path","mount_type","clients","entity_clients","non_entity_clients","acme_clients","secret_syncs"
+"prod/platform/","auth/azfra1/","kubernetes/",10,10,0,0,0
+"prod/platform/","auth/zurich/","kubernetes/",3,3,0,0,0
+"prod/platform/","auth/ezdihar/","deleted mount",2,2,0,0,0
+"prod/platform/","auth/sngpr2/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/azptest24/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/ocipt2024/","deleted mount",2,2,0,0,0
+"prod/platform/","deleted mount; accessor ""auth_kubernetes_6bb4a67f""","deleted mount",2,2,0,0,0
+"prod/platform/","auth/gcpptest/","deleted mount",2,2,0,0,0
+"prod/platform/","auth/bankina/","kubernetes/",2,2,0,0,0
+"prod/platform/","deleted mount; accessor ""auth_kubernetes_7c0cfb3a""","deleted mount",2,2,0,0,0
+"prod/platform/","auth/bsf/","deleted mount",2,2,0,0,0
+"prod/platform/","auth/osbg/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/atlas/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/ta3meed/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/azureuae/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/alami/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/montreal/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/bns/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/drt287/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/gcpptest2/","kubernetes/",2,2,0,0,0
+"prod/platform/","deleted mount; accessor ""auth_kubernetes_5f06866d""","deleted mount",2,2,0,0,0
+"prod/platform/","auth/sdb/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/mv/","deleted mount",2,2,0,0,0
+"prod/platform/","auth/wio/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/jeitto/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/libertad/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/koinworks/","kubernetes/",2,2,0,0,0
+"prod/platform/","auth/jago/","kubernetes/",2,2,0,0,0
+"prod/platform/","deleted mount; accessor ""auth_kubernetes_2d09ac74""","deleted mount",1,1,0,0,0
+"prod/platform/","auth/cd/","kubernetes/",1,1,0,0,0
+"prod/platform/","auth/vault-eu-az/","kubernetes/",1,1,0,0,0
+"prod/platform/","auth/mambutools/","deleted mount",1,1,0,0,0
+"prod/platform/","deleted mount; accessor ""auth_kubernetes_9f7493d2""","deleted mount",1,1,0,0,0
+"root","auth/okta_oidc/","oidc/",53,53,0,0,0
+"root","no mount accessor (pre-1.10 upgrade?)","deleted mount",9,9,0,0,0
+"root","auth/jwt/","jwt/",1,1,0,0,0
+"root","auth/userpass/","userpass/",1,1,0,0,0
+"sand/platform/","auth/zurich/","kubernetes/",10,10,0,0,0
+"sand/platform/","auth/azfra1/","kubernetes/",10,10,0,0,0
+"sand/platform/","auth/ezdihar/","deleted mount",2,2,0,0,0
+"sand/platform/","auth/osbg/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/jago/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/ta3meed/","deleted mount",2,2,0,0,0
+"sand/platform/","auth/mv/","deleted mount",2,2,0,0,0
+"sand/platform/","auth/bankina/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/jeitto/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/sdb/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/bns/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/koinworks/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/libertad/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/azureuae/","kubernetes/",2,2,0,0,0
+"sand/platform/","deleted mount; accessor ""auth_kubernetes_3521276f""","deleted mount",2,2,0,0,0
+"sand/platform/","auth/montreal/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/sngpr2/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/alami/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/atlas/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/wio/","kubernetes/",2,2,0,0,0
+"sand/platform/","auth/bsf/","deleted mount",2,2,0,0,0
+"sand/platform/","deleted mount; accessor ""auth_kubernetes_59892dc3""","deleted mount",2,2,0,0,0
+"dr/platform/","deleted mount; accessor ""auth_kubernetes_c42ba9fd""","deleted mount",2,2,0,0,0
+"dr/platform/","auth/libertad/","kubernetes/",1,1,0,0,0
+"dr/platform/","auth/drt287/","kubernetes/",1,1,0,0,0
+"dr/platform/","deleted mount; accessor ""auth_kubernetes_ed87e17c""","deleted mount",1,1,0,0,0
+"dr/platform/","deleted mount; accessor ""auth_kubernetes_435c1b1e""","deleted mount",1,1,0,0,0
+"dr/platform/","auth/sdb/","kubernetes/",1,1,0,0,0
+"dr/platform/","auth/sngpr2/","kubernetes/",1,1,0,0,0
+"dr/platform/","auth/azfra1/","kubernetes/",1,1,0,0,0
+"dr/platform/","auth/azureuae/","kubernetes/",1,1,0,0,0
+"dr/platform/","auth/adq/","kubernetes/",1,1,0,0,0
+"dr/platform/","deleted mount; accessor ""auth_kubernetes_c5461a4d""","deleted mount",1,1,0,0,0
+"dr/platform/","auth/osbg/","kubernetes/",1,1,0,0,0
+"dr/platform/","auth/zurich/","kubernetes/",1,1,0,0,0
+"dr/platform/","deleted mount; accessor ""auth_kubernetes_0e48fd7b""","deleted mount",1,1,0,0,0
+"dr/platform/","auth/jeitto/","kubernetes/",1,1,0,0,0
+"dr/platform/","auth/montreal/","kubernetes/",1,1,0,0,0
+"dr/platform/","auth/mv/","deleted mount",1,1,0,0,0
+"dr/platform/","auth/vault-eu-az/","kubernetes/",1,1,0,0,0
+"dr/platform/","deleted mount; accessor ""auth_kubernetes_b40a0e1d""","deleted mount",1,1,0,0,0
+"sand/zurich/","auth/kubernetes/","kubernetes/",17,17,0,0,0
+"prod/azfra1/","auth/kubernetes/","kubernetes/",16,16,0,0,0
+"sand/azfra1/","auth/kubernetes/","kubernetes/",16,16,0,0,0
+"prod/cd/","auth/kubernetes/","kubernetes/",11,11,0,0,0
+"sand/jago/","auth/kubernetes/","kubernetes/",10,10,0,0,0
+"deleted namespace ""hy090""","deleted mount; accessor ""auth_kubernetes_f069679b""","deleted mount",8,8,0,0,0
+"prod/zurich/","auth/kubernetes/","kubernetes/",8,8,0,0,0
+"sand/atlas/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"sand/sngpr2/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"prod/alami/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"sand/osbg/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"sand/koinworks/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"sand/jeitto/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"deleted namespace ""R0SjX""","auth/kubernetes/","deleted mount",7,7,0,0,0
+"prod/osbg/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"prod/sngpr2/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"sand/bns/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"sand/alami/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"prod/atlas/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"prod/jago/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"prod/koinworks/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"prod/jeitto/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"prod/azptest24/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"prod/wio/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"prod/gcpptest2/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"prod/bns/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"deleted namespace ""IiaWE""","auth/kubernetes/","deleted mount",7,7,0,0,0
+"sand/wio/","auth/kubernetes/","kubernetes/",7,7,0,0,0
+"dr/drt287/","auth/kubernetes/","kubernetes/",5,5,0,0,0
+"sand/azureuae/","auth/kubernetes/","kubernetes/",5,5,0,0,0
+"sand/libertad/","auth/kubernetes/","kubernetes/",5,5,0,0,0
+"prod/montreal/","auth/kubernetes/","kubernetes/",5,5,0,0,0
+"prod/bankina/","auth/kubernetes/","kubernetes/",5,5,0,0,0
+"sand/montreal/","auth/kubernetes/","kubernetes/",5,5,0,0,0
+"deleted namespace ""j9I7a""","auth/kubernetes/","deleted mount",5,5,0,0,0
+"sand/bankina/","auth/kubernetes/","kubernetes/",5,5,0,0,0
+"prod/libertad/","auth/kubernetes/","kubernetes/",5,5,0,0,0
+"prod/azureuae/","auth/kubernetes/","kubernetes/",5,5,0,0,0
+"sand/sdb/","auth/kubernetes/","kubernetes/",4,4,0,0,0
+"sand/osb/","deleted mount; accessor ""auth_kubernetes_fea40778""","deleted mount",4,4,0,0,0
+"deleted namespace ""6PPAx""","deleted mount; accessor ""auth_kubernetes_5581a0ad""","deleted mount",4,4,0,0,0
+"deleted namespace ""L6bxp""","auth/kubernetes/","deleted mount",4,4,0,0,0
+"deleted namespace ""fhHaj""","deleted mount; accessor ""auth_kubernetes_69d855bc""","deleted mount",4,4,0,0,0
+"deleted namespace ""uQSXH""","deleted mount; accessor ""auth_kubernetes_0bf9497a""","deleted mount",4,4,0,0,0
+"sand/adq/","deleted mount; accessor ""auth_kubernetes_65bac360""","deleted mount",4,4,0,0,0
+"sand/bsf/","auth/kubernetes/","deleted mount",4,4,0,0,0
+"prod/drt287/","auth/kubernetes/","kubernetes/",3,3,0,0,0
+"deleted namespace ""8Egsn""","deleted mount; accessor ""auth_kubernetes_9341253f""","deleted mount",3,3,0,0,0
+"deleted namespace ""EqZ38""","auth/kubernetes/","deleted mount",3,3,0,0,0
+"deleted namespace ""41gBR""","auth/kubernetes/","deleted mount",3,3,0,0,0
+"deleted namespace ""ifjJN""","auth/kubernetes/","deleted mount",3,3,0,0,0
+"deleted namespace ""dLZsT""","auth/kubernetes/","deleted mount",3,3,0,0,0
+"prod/sdb/","auth/kubernetes/","kubernetes/",3,3,0,0,0
+"deleted namespace ""Jkpyk""","auth/kubernetes/","deleted mount",3,3,0,0,0
+"gitlab/","auth/jwt/","jwt/",2,2,0,0,0
+"prod/ta3meed/","auth/kubernetes/","kubernetes/",2,2,0,0,0
+"deleted namespace ""YFqMn""","deleted mount; accessor ""auth_kubernetes_cdaa5941""","deleted mount",2,2,0,0,0
+"deleted namespace ""Mb7iR""","deleted mount; accessor ""auth_kubernetes_42cca2e0""","deleted mount",1,1,0,0,0
+"prod/vault-eu-az/","auth/kubernetes/","kubernetes/",1,1,0,0,0
+"dr/jeitto/","auth/kubernetes/","kubernetes/",1,1,0,0,0
+"dr/adq/","auth/kubernetes/","kubernetes/",1,1,0,0,0
+"deleted namespace ""kcacU""","deleted mount; accessor ""auth_kubernetes_64f0b166""","deleted mount",1,1,0,0,0
+"dr/montreal/","auth/kubernetes/","kubernetes/",1,1,0,0,0
+"dr/sngpr2/","auth/kubernetes/","kubernetes/",1,1,0,0,0
+"dr/vault-eu-az/","auth/kubernetes/","kubernetes/",1,1,0,0,0
+"deleted namespace ""fTMGL""","auth/kubernetes/","deleted mount",1,1,0,0,0
+"deleted namespace ""tBcOv""","deleted mount; accessor ""auth_kubernetes_be133760""","deleted mount",1,1,0,0,0
+"dr/sdb/","auth/kubernetes/","kubernetes/",1,1,0,0,0
+"dr/libertad/","auth/kubernetes/","kubernetes/",1,1,0,0,0
+"dr/azfra1/","auth/kubernetes/","kubernetes/",1,1,0,0,0
+"dr/osbg/","auth/kubernetes/","kubernetes/",1,1,0,0,0
+"deleted namespace ""3M5Cl""","deleted mount; accessor ""auth_kubernetes_b668176d""","deleted mount",1,1,0,0,0
+"deleted namespace ""tbReZ""","deleted mount; accessor ""auth_kubernetes_1cce7ef3""","deleted mount",1,1,0,0,0
+"dr/azureuae/","auth/kubernetes/","kubernetes/",1,1,0,0,0
+"dr/zurich/","auth/kubernetes/","kubernetes/",1,1,0,0,0

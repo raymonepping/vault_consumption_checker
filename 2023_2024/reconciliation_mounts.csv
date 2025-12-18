@@ -1,0 +1,5 @@
+"namespace","namespace_clients","mounts_clients_sum","delta","mount_path","mount_type","clients","entity_clients","non_entity_clients","acme_clients","secret_syncs"
+"root",60,64,4,"auth/okta_oidc/","oidc/",53,53,0,0,0
+"root",60,64,4,"no mount accessor (pre-1.10 upgrade?)","deleted mount",9,9,0,0,0
+"root",60,64,4,"auth/jwt/","jwt/",1,1,0,0,0
+"root",60,64,4,"auth/userpass/","userpass/",1,1,0,0,0
