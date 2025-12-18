@@ -12,10 +12,11 @@ Thumbs.db
 git_commit.sh
 FOLDER_TREE.md
 
-2023_2024/* 
-2024_2025/*
-2023_2024/&
-input/*
+# Vault usage input folders
+2023_2024/
+2024_2025/
+diff/
+input/
 
 ########################################
 # 💻 IDE & Editor Configs
