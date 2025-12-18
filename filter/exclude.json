@@ -1,0 +1,20 @@
+{
+  "mode": "exclude",
+  "exclude_namespaces": [
+    "^sand/",
+    "^deleted",
+    "^dr/",
+    "^dev/",
+    "^test/",
+    "^sandbox/"
+  ],
+  "non_production_namespaces": [
+    "^sand/",
+    "^dr/",
+    "^deleted",
+    "^dev/",
+    "^gitlab/",    
+    "^test/",
+    "^sandbox/"
+  ]
+}

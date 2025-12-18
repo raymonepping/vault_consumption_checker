@@ -4,24 +4,27 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  ./diff_vault_clients.sh --old <file1> --new <file2> [--top N] [--out-csv <dir>] [--out-md <path>]
+  ./diff_clients.sh --old <file1> --new <file2> [--top N] [--out-csv <dir>] [--out-md <path>] [--filter <path>] [--filter-mode exclude|highlight]
 
 What it does:
   - Validates JSON inputs
-  - Compares overall totals from .total (unique client counts)
-  - Compares totals per namespace (.by_namespace[].counts)
+  - Compares overall totals (unique client counts) for the selected scope
+  - Compares totals per namespace
   - Shows deltas (increased/decreased) and top movers
   - Adds "exec proof" stats:
-      - top 3 increases total (shows how much growth is concentrated)
-      - deleted namespaces net change (shows lifecycle churn impact)
-  - Markdown report includes a Key takeaway block
+      - top 3 increases total
+      - deleted namespaces net change
+  - Optional filter file:
+      - exclude: removes matching namespaces from the analysis
+      - highlight: includes everything but labels non-production namespaces
 
 Requirements:
   - jq
 
 Examples:
-  ./diff_vault_clients.sh --old activity_counter_2023_2024.txt --new activity_counter_2024_2025.txt
-  ./diff_vault_clients.sh --old a.txt --new b.txt --top 20 --out-csv ./out --out-md ./out/diff.md
+  ./diff_clients.sh --old a.json --new b.json
+  ./diff_clients.sh --old a.json --new b.json --top 20 --out-csv ./out --out-md ./out/diff.md
+  ./diff_clients.sh --old a.json --new b.json --filter ./filter/exclude.json --filter-mode exclude
 USAGE
 }
 
@@ -30,38 +33,20 @@ NEW=""
 TOP=15
 OUT_CSV_DIR=""
 OUT_MD_PATH=""
+FILTER=""
+FILTER_MODE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-  --old)
-    OLD="${2:-}"
-    shift 2
-    ;;
-  --new)
-    NEW="${2:-}"
-    shift 2
-    ;;
-  --top)
-    TOP="${2:-15}"
-    shift 2
-    ;;
-  --out-csv)
-    OUT_CSV_DIR="${2:-}"
-    shift 2
-    ;;
-  --out-md)
-    OUT_MD_PATH="${2:-}"
-    shift 2
-    ;;
-  --help | -h)
-    usage
-    exit 0
-    ;;
-  *)
-    echo "Unknown arg: $1"
-    usage
-    exit 2
-    ;;
+    --old) OLD="${2:-}"; shift 2 ;;
+    --new) NEW="${2:-}"; shift 2 ;;
+    --top) TOP="${2:-15}"; shift 2 ;;
+    --out-csv) OUT_CSV_DIR="${2:-}"; shift 2 ;;
+    --out-md) OUT_MD_PATH="${2:-}"; shift 2 ;;
+    --filter) FILTER="${2:-}"; shift 2 ;;
+    --filter-mode) FILTER_MODE="${2:-}"; shift 2 ;;
+    --help|-h) usage; exit 0 ;;
+    *) echo "Unknown arg: $1"; usage; exit 2 ;;
   esac
 done
 
@@ -94,6 +79,17 @@ if ! jq -e . "${NEW}" >/dev/null 2>&1; then
   exit 2
 fi
 
+if [[ -n "${FILTER}" ]]; then
+  if [[ ! -f "${FILTER}" ]]; then
+    echo "Error: filter file not found: ${FILTER}"
+    exit 2
+  fi
+  if ! jq -e . "${FILTER}" >/dev/null 2>&1; then
+    echo "Error: filter file is not valid JSON: ${FILTER}"
+    exit 2
+  fi
+fi
+
 if [[ -n "${OUT_CSV_DIR}" ]]; then
   mkdir -p "${OUT_CSV_DIR}"
 fi
@@ -102,24 +98,49 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
   mkdir -p "$(dirname "${OUT_MD_PATH}")"
 fi
 
-# Print terminal report
-jq -n -r --argjson top "$TOP" --slurpfile old "${OLD}" --slurpfile new "${NEW}" '
+JQ_FILTER_ARGS=()
+if [[ -n "${FILTER}" ]]; then
+  JQ_FILTER_ARGS+=(--slurpfile filter "${FILTER}")
+fi
+if [[ -n "${FILTER_MODE}" ]]; then
+  JQ_FILTER_ARGS+=(--arg filter_mode "${FILTER_MODE}")
+fi
+
+# ---------------- Terminal report ----------------
+jq -n -r --argjson top "${TOP}" "${JQ_FILTER_ARGS[@]}" --slurpfile old "${OLD}" --slurpfile new "${NEW}" '
   def nz: . // 0;
   def norm_ns(p): if (p|nz) == "" then "root" else p end;
 
-  def totals(d):
-    {
-      start_time: (d.start_time | tostring),
-      clients: ((d.total.clients // 0) | nz)
-    };
+  # Filter config (same structure as count_clients.sh)
+  def f: (if ($filter|type) == "array" and ($filter|length) > 0 then $filter[0] else {} end);
+  def mode_from_file: (f.mode // "exclude");
+  def mode:
+    if ($filter_mode? // "") != "" then $filter_mode else mode_from_file end;
+
+  def excl: (f.exclude_namespaces // []);
+  def nonprod: (f.non_production_namespaces // []);
+
+  # Robust matcher: avoid any(.[]; ...) edge cases
+  def matches_any($patterns; $s):
+    reduce ($patterns[]? ) as $p (false; . or (try ($s | test($p)) catch false));
+
+  def is_excluded($ns): matches_any(excl; $ns);
+  def is_nonprod($ns): matches_any(nonprod; $ns);
 
   def ns_map(d):
     (d.by_namespace
-      | map({
-          namespace: norm_ns(.namespace_path),
-          clients: (.counts.clients | nz),
-          mounts: (.mounts | length)
-        })
+      | map(
+          . as $ns
+          | norm_ns($ns.namespace_path) as $name
+          | {
+              namespace: $name,
+              clients: ($ns.counts.clients | nz),
+              mounts: ($ns.mounts | length),
+              excluded: is_excluded($name),
+              non_production: is_nonprod($name)
+            }
+        )
+      | if mode == "exclude" then map(select(.excluded | not)) else . end
       | reduce .[] as $r ({}; .[$r.namespace] = $r)
     );
 
@@ -130,8 +151,8 @@ jq -n -r --argjson top "$TOP" --slurpfile old "${OLD}" --slurpfile new "${NEW}" 
     (keys_union(oldm; newm)
       | map(
           . as $k
-          | (oldm[$k] // {clients:0,mounts:0}) as $o
-          | (newm[$k] // {clients:0,mounts:0}) as $n
+          | (oldm[$k] // {clients:0,mounts:0,non_production:false}) as $o
+          | (newm[$k] // {clients:0,mounts:0,non_production:false}) as $n
           | {
               namespace: $k,
               old_clients: ($o.clients|nz),
@@ -139,31 +160,42 @@ jq -n -r --argjson top "$TOP" --slurpfile old "${OLD}" --slurpfile new "${NEW}" 
               delta_clients: (($n.clients|nz) - ($o.clients|nz)),
               old_mounts: ($o.mounts|nz),
               new_mounts: ($n.mounts|nz),
-              delta_mounts: (($n.mounts|nz) - ($o.mounts|nz))
+              delta_mounts: (($n.mounts|nz) - ($o.mounts|nz)),
+              non_production: ($n.non_production // $o.non_production // false)
             }
         )
       | sort_by(.delta_clients) | reverse
     );
 
+  def total_clients_from_map(m): (m | to_entries | map(.value.clients|nz) | add // 0);
+
   ($old[0]) as $o
   | ($new[0]) as $n
-  | (totals($o)) as $ot
-  | (totals($n)) as $nt
-  | ($nt.clients - $ot.clients) as $delta_total
   | (ns_map($o)) as $oldm
   | (ns_map($n)) as $newm
+  | (total_clients_from_map($oldm)) as $old_total
+  | (total_clients_from_map($newm)) as $new_total
+  | ($new_total - $old_total) as $delta_total
   | (ns_deltas($oldm; $newm)) as $rows
   | ($rows | map(select(.delta_clients > 0))) as $added
   | ($rows | map(select(.delta_clients < 0))) as $removed
   | (($added | sort_by(.delta_clients) | reverse)[0:3] | map(.delta_clients) | add // 0) as $top3_inc
   | (($removed | map(select(.namespace | startswith("deleted namespace"))) | map(.delta_clients) | add) // 0) as $deleted_delta
+  | ($rows | map(select(.non_production == true))) as $nonprod_rows
 
   | (
-    "Overall (from .total)\n" +
-    "  old start_time: " + ($ot.start_time) + "\n" +
-    "  new start_time: " + ($nt.start_time) + "\n" +
-    "  old clients:    " + ($ot.clients|tostring) + "\n" +
-    "  new clients:    " + ($nt.clients|tostring) + "\n" +
+    (if ($filter|type) == "array" and ($filter|length) > 0 then
+      "Filter\n" +
+      "  mode: " + (mode|tostring) + "\n" +
+      "  exclude_namespaces: " + (excl|tostring) + "\n" +
+      "  non_production_namespaces: " + (nonprod|tostring) + "\n\n"
+    else "" end) +
+
+    "Overall (selected scope)\n" +
+    "  old start_time: " + ($o.start_time|tostring) + "\n" +
+    "  new start_time: " + ($n.start_time|tostring) + "\n" +
+    "  old clients:    " + ($old_total|tostring) + "\n" +
+    "  new clients:    " + ($new_total|tostring) + "\n" +
     "  delta clients:  " + ($delta_total|tostring) + "\n" +
     "  top 3 increases total: " + ($top3_inc|tostring) + " (offset by decreases)\n" +
     "  deleted namespaces net change: " + ($deleted_delta|tostring) + "\n" +
@@ -176,7 +208,11 @@ jq -n -r --argjson top "$TOP" --slurpfile old "${OLD}" --slurpfile new "${NEW}" 
     (
       ($added | sort_by(.delta_clients) | reverse)[0:$top]
       | if length == 0 then "  - none\n"
-        else (map("  - " + .namespace + "  " + (.old_clients|tostring) + " -> " + (.new_clients|tostring) + " (+" + (.delta_clients|tostring) + ")") | join("\n")) + "\n"
+        else (map(
+              "  - " + .namespace
+              + (if mode=="highlight" and .non_production then "  [non-production]" else "" end)
+              + "  " + (.old_clients|tostring) + " -> " + (.new_clients|tostring) + " (+" + (.delta_clients|tostring) + ")"
+            ) | join("\n")) + "\n"
         end
     ) + "\n" +
 
@@ -184,25 +220,61 @@ jq -n -r --argjson top "$TOP" --slurpfile old "${OLD}" --slurpfile new "${NEW}" 
     (
       ($removed | sort_by(.delta_clients))[0:$top]
       | if length == 0 then "  - none\n"
-        else (map("  - " + .namespace + "  " + (.old_clients|tostring) + " -> " + (.new_clients|tostring) + " (" + (.delta_clients|tostring) + ")") | join("\n")) + "\n"
+        else (map(
+              "  - " + .namespace
+              + (if mode=="highlight" and .non_production then "  [non-production]" else "" end)
+              + "  " + (.old_clients|tostring) + " -> " + (.new_clients|tostring) + " (" + (.delta_clients|tostring) + ")"
+            ) | join("\n")) + "\n"
         end
-    ) + "\n"
+    ) + "\n" +
+
+    (if mode=="highlight" and ($nonprod_rows|length) > 0 then
+      ("Non-production movers (top " + ($top|tostring) + " by absolute change)\n") +
+      (
+        ($nonprod_rows
+          | map(. + {abs_delta: (.delta_clients|abs)})
+          | sort_by(.abs_delta) | reverse
+        )[0:$top]
+        | map("  - " + .namespace + "  " + (.old_clients|tostring) + " -> " + (.new_clients|tostring) + " (" + (.delta_clients|tostring) + ")")
+        | join("\n")
+      ) + "\n\n"
+    else "" end)
   )
 '
 
-# CSV export
+# ---------------- CSV export ----------------
 if [[ -n "${OUT_CSV_DIR}" ]]; then
-  jq -n -r --slurpfile old "${OLD}" --slurpfile new "${NEW}" '
+  jq -n -r "${JQ_FILTER_ARGS[@]}" --slurpfile old "${OLD}" --slurpfile new "${NEW}" '
     def nz: . // 0;
     def norm_ns(p): if (p|nz) == "" then "root" else p end;
 
+    def f: (if ($filter|type) == "array" and ($filter|length) > 0 then $filter[0] else {} end);
+    def mode_from_file: (f.mode // "exclude");
+    def mode:
+      if ($filter_mode? // "") != "" then $filter_mode else mode_from_file end;
+    def excl: (f.exclude_namespaces // []);
+    def nonprod: (f.non_production_namespaces // []);
+
+    def matches_any($patterns; $s):
+      reduce ($patterns[]? ) as $p (false; . or (try ($s | test($p)) catch false));
+
+    def is_excluded($ns): matches_any(excl; $ns);
+    def is_nonprod($ns): matches_any(nonprod; $ns);
+
     def ns_map(d):
       (d.by_namespace
-        | map({
-            namespace: norm_ns(.namespace_path),
-            clients: (.counts.clients | nz),
-            mounts: (.mounts | length)
-          })
+        | map(
+            . as $ns
+            | norm_ns($ns.namespace_path) as $name
+            | {
+                namespace: $name,
+                clients: ($ns.counts.clients | nz),
+                mounts: ($ns.mounts | length),
+                excluded: is_excluded($name),
+                non_production: is_nonprod($name)
+              }
+          )
+        | if mode == "exclude" then map(select(.excluded | not)) else . end
         | reduce .[] as $r ({}; .[$r.namespace] = $r)
       );
 
@@ -213,11 +285,11 @@ if [[ -n "${OUT_CSV_DIR}" ]]; then
     | ($new[0]) as $n
     | (ns_map($o)) as $oldm
     | (ns_map($n)) as $newm
-    | (["namespace","old_clients","new_clients","delta_clients","old_mounts","new_mounts","delta_mounts"] | @csv),
+    | (["namespace","old_clients","new_clients","delta_clients","old_mounts","new_mounts","delta_mounts","non_production"] | @csv),
       (keys_union($oldm; $newm)[]
         as $k
-        | ($oldm[$k] // {clients:0,mounts:0}) as $ov
-        | ($newm[$k] // {clients:0,mounts:0}) as $nv
+        | ($oldm[$k] // {clients:0,mounts:0,non_production:false}) as $ov
+        | ($newm[$k] // {clients:0,mounts:0,non_production:false}) as $nv
         | [
             $k,
             ($ov.clients|nz),
@@ -225,23 +297,43 @@ if [[ -n "${OUT_CSV_DIR}" ]]; then
             (($nv.clients|nz) - ($ov.clients|nz)),
             ($ov.mounts|nz),
             ($nv.mounts|nz),
-            (($nv.mounts|nz) - ($ov.mounts|nz))
+            (($nv.mounts|nz) - ($ov.mounts|nz)),
+            ($nv.non_production // $ov.non_production // false)
           ]
         | @csv
       )
   ' >"${OUT_CSV_DIR}/namespace_diff.csv"
 
-  # Exec summary CSV (single row) for easy copy/paste into slides
-  jq -n -r --slurpfile old "${OLD}" --slurpfile new "${NEW}" '
+  jq -n -r "${JQ_FILTER_ARGS[@]}" --slurpfile old "${OLD}" --slurpfile new "${NEW}" '
     def nz: . // 0;
     def norm_ns(p): if (p|nz) == "" then "root" else p end;
 
-    def totals(d):
-      { start_time: (d.start_time|tostring), clients: ((d.total.clients // 0) | nz) };
+    def f: (if ($filter|type) == "array" and ($filter|length) > 0 then $filter[0] else {} end);
+    def mode_from_file: (f.mode // "exclude");
+    def mode:
+      if ($filter_mode? // "") != "" then $filter_mode else mode_from_file end;
+    def excl: (f.exclude_namespaces // []);
+    def nonprod: (f.non_production_namespaces // []);
+
+    def matches_any($patterns; $s):
+      reduce ($patterns[]? ) as $p (false; . or (try ($s | test($p)) catch false));
+
+    def is_excluded($ns): matches_any(excl; $ns);
+    def is_nonprod($ns): matches_any(nonprod; $ns);
 
     def ns_map(d):
       (d.by_namespace
-        | map({ namespace: norm_ns(.namespace_path), clients: (.counts.clients|nz) })
+        | map(
+            . as $ns
+            | norm_ns($ns.namespace_path) as $name
+            | {
+                namespace: $name,
+                clients: ($ns.counts.clients | nz),
+                excluded: is_excluded($name),
+                non_production: is_nonprod($name)
+              }
+          )
+        | if mode == "exclude" then map(select(.excluded | not)) else . end
         | reduce .[] as $r ({}; .[$r.namespace] = $r)
       );
 
@@ -252,30 +344,33 @@ if [[ -n "${OUT_CSV_DIR}" ]]; then
       (keys_union(oldm; newm)
         | map(
             . as $k
-            | (oldm[$k] // {clients:0}) as $o
-            | (newm[$k] // {clients:0}) as $n
-            | { namespace:$k, delta_clients: (($n.clients|nz) - ($o.clients|nz)) }
+            | (oldm[$k] // {clients:0,non_production:false}) as $o
+            | (newm[$k] // {clients:0,non_production:false}) as $n
+            | { namespace:$k, delta_clients: (($n.clients|nz) - ($o.clients|nz)) , non_production: ($n.non_production // $o.non_production // false) }
           )
       );
 
+    def total_clients_from_map(m): (m | to_entries | map(.value.clients|nz) | add // 0);
+
     ($old[0]) as $o
     | ($new[0]) as $n
-    | (totals($o)) as $ot
-    | (totals($n)) as $nt
-    | ($nt.clients - $ot.clients) as $delta_total
     | (ns_map($o)) as $oldm
     | (ns_map($n)) as $newm
+    | (total_clients_from_map($oldm)) as $old_total
+    | (total_clients_from_map($newm)) as $new_total
+    | ($new_total - $old_total) as $delta_total
     | (rows($oldm; $newm)) as $all
     | ($all | map(select(.delta_clients > 0))) as $added
     | ($all | map(select(.delta_clients < 0))) as $removed
     | (($added | sort_by(.delta_clients) | reverse)[0:3] | map(.delta_clients) | add // 0) as $top3_inc
     | (($removed | map(select(.namespace | startswith("deleted namespace"))) | map(.delta_clients) | add) // 0) as $deleted_delta
-    | (["old_start_time","new_start_time","old_clients","new_clients","delta_clients","top3_increases_total","deleted_namespaces_net_change"] | @csv),
+    | (["filter_mode","old_start_time","new_start_time","old_clients","new_clients","delta_clients","top3_increases_total","deleted_namespaces_net_change"] | @csv),
       ([
-        $ot.start_time,
-        $nt.start_time,
-        $ot.clients,
-        $nt.clients,
+        (mode|tostring),
+        ($o.start_time|tostring),
+        ($n.start_time|tostring),
+        $old_total,
+        $new_total,
         $delta_total,
         $top3_inc,
         $deleted_delta
@@ -287,25 +382,39 @@ if [[ -n "${OUT_CSV_DIR}" ]]; then
   echo "  - ${OUT_CSV_DIR}/summary.csv"
 fi
 
-# Markdown export
+# ---------------- Markdown export ----------------
 if [[ -n "${OUT_MD_PATH}" ]]; then
-  jq -n -r --argjson top "$TOP" --slurpfile old "${OLD}" --slurpfile new "${NEW}" '
+  jq -n -r --argjson top "${TOP}" "${JQ_FILTER_ARGS[@]}" --slurpfile old "${OLD}" --slurpfile new "${NEW}" '
     def nz: . // 0;
     def norm_ns(p): if (p|nz) == "" then "root" else p end;
 
-    def totals(d):
-      {
-        start_time: (d.start_time | tostring),
-        clients: ((d.total.clients // 0) | nz)
-      };
+    def f: (if ($filter|type) == "array" and ($filter|length) > 0 then $filter[0] else {} end);
+    def mode_from_file: (f.mode // "exclude");
+    def mode:
+      if ($filter_mode? // "") != "" then $filter_mode else mode_from_file end;
+    def excl: (f.exclude_namespaces // []);
+    def nonprod: (f.non_production_namespaces // []);
+
+    def matches_any($patterns; $s):
+      reduce ($patterns[]? ) as $p (false; . or (try ($s | test($p)) catch false));
+
+    def is_excluded($ns): matches_any(excl; $ns);
+    def is_nonprod($ns): matches_any(nonprod; $ns);
 
     def ns_map(d):
       (d.by_namespace
-        | map({
-            namespace: norm_ns(.namespace_path),
-            clients: (.counts.clients | nz),
-            mounts: (.mounts | length)
-          })
+        | map(
+            . as $ns
+            | norm_ns($ns.namespace_path) as $name
+            | {
+                namespace: $name,
+                clients: ($ns.counts.clients | nz),
+                mounts: ($ns.mounts | length),
+                excluded: is_excluded($name),
+                non_production: is_nonprod($name)
+              }
+          )
+        | if mode == "exclude" then map(select(.excluded | not)) else . end
         | reduce .[] as $r ({}; .[$r.namespace] = $r)
       );
 
@@ -316,8 +425,8 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
       (keys_union(oldm; newm)
         | map(
             . as $k
-            | (oldm[$k] // {clients:0,mounts:0}) as $o
-            | (newm[$k] // {clients:0,mounts:0}) as $n
+            | (oldm[$k] // {clients:0,mounts:0,non_production:false}) as $o
+            | (newm[$k] // {clients:0,mounts:0,non_production:false}) as $n
             | {
                 namespace: $k,
                 old_clients: ($o.clients|nz),
@@ -325,19 +434,22 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
                 delta_clients: (($n.clients|nz) - ($o.clients|nz)),
                 old_mounts: ($o.mounts|nz),
                 new_mounts: ($n.mounts|nz),
-                delta_mounts: (($n.mounts|nz) - ($o.mounts|nz))
+                delta_mounts: (($n.mounts|nz) - ($o.mounts|nz)),
+                non_production: ($n.non_production // $o.non_production // false)
               }
           )
         | sort_by(.delta_clients) | reverse
       );
 
+    def total_clients_from_map(m): (m | to_entries | map(.value.clients|nz) | add // 0);
+
     ($old[0]) as $o
     | ($new[0]) as $n
-    | (totals($o)) as $ot
-    | (totals($n)) as $nt
-    | ($nt.clients - $ot.clients) as $delta_total
     | (ns_map($o)) as $oldm
     | (ns_map($n)) as $newm
+    | (total_clients_from_map($oldm)) as $old_total
+    | (total_clients_from_map($newm)) as $new_total
+    | ($new_total - $old_total) as $delta_total
     | (rows($oldm; $newm)) as $all
     | ($all | map(select(.delta_clients > 0))) as $added
     | ($all | map(select(.delta_clients < 0))) as $removed
@@ -346,44 +458,45 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
 
     | (
       "# Vault client diff report\n\n" +
+      (if ($filter|type) == "array" and ($filter|length) > 0 then
+        "## Filter\n\n" +
+        "- mode: `" + (mode|tostring) + "`\n" +
+        "- exclude_namespaces: `" + (excl|tostring) + "`\n" +
+        "- non_production_namespaces: `" + (nonprod|tostring) + "`\n\n"
+      else "" end) +
 
-      "## Overall\n\n" +
-      "- old start_time: `" + ($ot.start_time) + "`\n" +
-      "- new start_time: `" + ($nt.start_time) + "`\n" +
-      "- old clients: `" + ($ot.clients|tostring) + "`\n" +
-      "- new clients: `" + ($nt.clients|tostring) + "`\n" +
+      "## Overall (selected scope)\n\n" +
+      "- old start_time: `" + ($o.start_time|tostring) + "`\n" +
+      "- new start_time: `" + ($n.start_time|tostring) + "`\n" +
+      "- old clients: `" + ($old_total|tostring) + "`\n" +
+      "- new clients: `" + ($new_total|tostring) + "`\n" +
       "- delta clients: `" + ($delta_total|tostring) + "`\n" +
-      "- top 3 increases total: `" + ($top3_inc|tostring) + "` (offset by decreases)\n" +
+      "- top 3 increases total: `" + ($top3_inc|tostring) + "`\n" +
       "- deleted namespaces net change: `" + ($deleted_delta|tostring) + "`\n\n" +
 
-      "## Key takeaway\n\n" +
-      "Unique clients changed by **" + ($delta_total|tostring) + "** year over year (**" +
-      ($ot.clients|tostring) + " → " + ($nt.clients|tostring) +
-      "**). Most of the movement is concentrated in the largest few namespaces.\n\n" +
-
       "## Top increases\n\n" +
-      "| namespace | old | new | delta |\n" +
-      "|---|---:|---:|---:|\n" +
+      "| namespace | old | new | delta | non_production |\n" +
+      "|---|---:|---:|---:|---|\n" +
       (
         (($added | sort_by(.delta_clients) | reverse)[0:$top])
-        | if length == 0 then "| _none_ |  |  |  |\n"
-          else (map("| " + .namespace + " | " + (.old_clients|tostring) + " | " + (.new_clients|tostring) + " | +" + (.delta_clients|tostring) + " |") | join("\n")) + "\n"
+        | if length == 0 then "| _none_ |  |  |  |  |\n"
+          else (map("| " + .namespace + " | " + (.old_clients|tostring) + " | " + (.new_clients|tostring) + " | +" + (.delta_clients|tostring) + " | " + (.non_production|tostring) + " |") | join("\n")) + "\n"
           end
       ) + "\n" +
 
       "## Top decreases\n\n" +
-      "| namespace | old | new | delta |\n" +
-      "|---|---:|---:|---:|\n" +
+      "| namespace | old | new | delta | non_production |\n" +
+      "|---|---:|---:|---:|---|\n" +
       (
         (($removed | sort_by(.delta_clients))[0:$top])
-        | if length == 0 then "| _none_ |  |  |  |\n"
-          else (map("| " + .namespace + " | " + (.old_clients|tostring) + " | " + (.new_clients|tostring) + " | " + (.delta_clients|tostring) + " |") | join("\n")) + "\n"
+        | if length == 0 then "| _none_ |  |  |  |  |\n"
+          else (map("| " + .namespace + " | " + (.old_clients|tostring) + " | " + (.new_clients|tostring) + " | " + (.delta_clients|tostring) + " | " + (.non_production|tostring) + " |") | join("\n")) + "\n"
           end
       ) + "\n" +
 
       "## Full namespace delta (top " + ($top|tostring) + " by change)\n\n" +
-      "| namespace | old_clients | new_clients | delta_clients | old_mounts | new_mounts | delta_mounts |\n" +
-      "|---|---:|---:|---:|---:|---:|---:|\n" +
+      "| namespace | old_clients | new_clients | delta_clients | old_mounts | new_mounts | delta_mounts | non_production |\n" +
+      "|---|---:|---:|---:|---:|---:|---:|---|\n" +
       (
         $all[0:$top]
         | map("| " + .namespace
@@ -393,6 +506,7 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
               + " | " + (.old_mounts|tostring)
               + " | " + (.new_mounts|tostring)
               + " | " + (.delta_mounts|tostring)
+              + " | " + (.non_production|tostring)
               + " |")
         | join("\n")
       ) + "\n"
