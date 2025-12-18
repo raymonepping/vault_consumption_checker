@@ -1,201 +1,202 @@
-## `README.md`
-
 ````md
 # Vault Consumption Checker
 
-Small, jq-powered helper scripts to inspect HashiCorp Vault “activity counter” JSON exports (sometimes saved as `.txt`) and turn them into:
-- Human-readable summaries in the terminal
-- CSV files for Excel
-- Markdown reports (diff script)
+A tiny, auditable way to answer a deceptively hard question:
 
-This repo is intentionally minimal and easy to run locally.
+> “How many **unique Vault clients** did we actually have, and what changed year over year?”
+
+This repo contains two Bash scripts:
+
+- `scripts/count_clients.sh`  
+  Creates a per-file report (totals, top namespaces, top mounts), reconciliation checks, and optional CSV/Markdown exports.
+- `scripts/diff_clients.sh`  
+  Compares two files (year over year), shows top movers, and optionally exports CSV/Markdown. Supports scope filtering and non-production highlighting.
+
+## Requirements
+
+- Bash
+- `jq`
+
+Install `jq`:
+- macOS: `brew install jq`
+- Debian/Ubuntu: `apt-get install -y jq`
 
 ## Repository layout
 
 ```text
-.
+./
+├── input/
+│   └── activity_counter_*.txt
+├── filter/
+│   └── exclude.json
 └── scripts/
     ├── count_clients.sh
     └── diff_clients.sh
 ````
 
-## Requirements
-
-* `bash`
-* `jq`
-
-Install `jq`:
-
-* macOS: `brew install jq`
-* Debian/Ubuntu: `sudo apt-get update && sudo apt-get install -y jq`
-
 ## Input format
 
-Both scripts expect a file containing valid JSON with a structure similar to:
+The scripts expect a JSON file that looks like an **activity counter export**, with (at least) these keys:
 
-* `start_time` (string)
-* `by_namespace[]` with:
+* `start_time`
+* `total.counts.clients` (or `total.clients` depending on your export)
+* `by_namespace[]` where each entry contains:
 
   * `namespace_path`
-  * `counts` (clients, entity_clients, non_entity_clients, acme_clients, secret_syncs)
-  * `mounts[]` with `mount_path`, `mount_type`, `counts`
-* `total` (reported totals)
+  * `counts.clients`
+  * `mounts[]` with per-mount `counts.clients`
 
-The file extension does not matter. If it is JSON, it works.
+If the file includes `.months[]`, `count_clients.sh` will also run monthly sanity checks and export `months.csv`.
 
-Example input file names used in this repo:
+## Quick start
 
-* `./input/activity_counter_2023_2024.txt`
-* `./input/activity_counter_2024_2025.txt`
-
-## Script 1: Count and reconcile clients
-
-### What it does
-
-`./scripts/count_clients.sh`:
-
-* Validates JSON
-* Computes totals from namespaces
-* Computes totals from mounts
-* Compares computed totals to the file’s `.total`
-* Highlights reconciliation gaps where a namespace’s `counts.clients` differs from the sum of its mounts
-* Prints “top N” namespaces and mounts by clients
-* Optionally exports CSV files (Excel-friendly)
-
-### Usage
+### 1) Count a single report
 
 ```bash
-./scripts/count_clients.sh --file <path> [--top N] [--out-csv <dir>] [--out-md <path>]
+./scripts/count_clients.sh \
+  --file ./input/activity_counter_2024_2025.txt \
+  --out-csv ./2024_2025 \
+  --out-md  ./2024_2025/2025_report.md
 ```
 
-### Example
+This produces:
 
-```bash
-./scripts/count_clients.sh --file ./input/activity_counter_2024_2025.txt --out-csv ./2024_2025
-./scripts/count_clients.sh --file ./input/activity_counter_2023_2024.txt --out-csv ./2023_2024
-```
+* `./2024_2025/namespaces.csv`
+* `./2024_2025/mounts.csv`
+* `./2024_2025/reconciliation.csv`
+* `./2024_2025/reconciliation_mounts.csv`
+* `./2024_2025/months.csv` (only if `.months[]` exists)
+* `./2024_2025/2025_report.md`
 
-### CSV output
-
-When you use `--out-csv <dir>`, these files are generated:
-
-* `namespaces.csv`
-* `mounts.csv`
-* `reconciliation.csv`
-* `reconciliation_mounts.csv` (mount breakdown for namespaces with a delta)
-
-## Script 2: Diff year-over-year client counts
-
-### What it does
-
-`./scripts/diff_clients.sh` compares two activity counter files and reports:
-
-* Overall unique client delta (from `.total.clients`)
-* Top namespaces increased and decreased
-* A “concentration” metric: sum of the top 3 increases (shows how much growth is concentrated)
-* Deleted namespaces net change (helps explain lifecycle churn)
-* Optional CSV and Markdown exports
-
-### Usage
-
-```bash
-./scripts/diff_clients.sh --old <file1> --new <file2> [--top N] [--out-csv <dir>] [--out-md <path>]
-```
-
-### Example
+### 2) Diff two reports (year over year)
 
 ```bash
 ./scripts/diff_clients.sh \
   --old ./input/activity_counter_2023_2024.txt \
   --new ./input/activity_counter_2024_2025.txt \
   --out-csv ./diff \
-  --out-md ./diff/2024_vs_2025.md
+  --out-md  ./diff/2024_vs_2025.md
 ```
 
-### Output files
+This produces:
 
-When you use `--out-csv <dir>`:
+* `./diff/namespace_diff.csv`
+* `./diff/summary.csv` (single-row “exec proof” stats)
+* `./diff/2024_vs_2025.md`
 
-* `namespace_diff.csv`
-* `summary.csv` (single-row exec summary, easy for slides)
+## Filtering and “production scope”
 
-When you use `--out-md <path>`:
+Both scripts support an optional filter file, so you can either:
 
-* A Markdown report with:
+* **exclude** namespaces from totals (production scope), or
+* **highlight** namespaces as non-production while still counting everything.
 
-  * Overall delta
-  * Key takeaway
-  * Top increases and decreases
-  * Full namespace delta table
+### Filter JSON schema
 
-## How to interpret totals and reconciliation
+`filter/exclude.json` example:
 
-You will often see:
+```json
+{
+  "mode": "exclude",
+  "exclude_namespaces": [
+    "^sand/",
+    "^deleted",
+    "^dr/",
+    "^dev/",
+    "^test/",
+    "^sandbox/"
+  ],
+  "non_production_namespaces": [
+    "^sand/",
+    "^dr/",
+    "^deleted",
+    "^dev/",
+    "^gitlab/",
+    "^test/",
+    "^sandbox/"
+  ]
+}
+```
 
-* Namespace totals (and `.total`) match perfectly
-* Mount totals are higher than namespace totals
+Notes:
 
-That is expected in many environments.
+* The values are **regex patterns** used with `jq` `test(...)`.
+* JSON does not allow comments. Validate with:
 
-Why:
+  ```bash
+  jq -e . ./filter/exclude.json >/dev/null && echo "valid" || echo "invalid"
+  ```
 
-* The same client can authenticate via multiple auth mounts during the measurement window.
-* Old or deleted mount accessors can show up (for example: “no mount accessor (pre-1.10 upgrade?)”).
-* Mount-level sums are best treated as attribution, not a unique client count.
+### Mode: exclude (production-only counting)
 
-If you need a single number for “unique clients”, use:
+```bash
+./scripts/count_clients.sh \
+  --file ./input/activity_counter_2024_2025.txt \
+  --filter ./filter/exclude.json \
+  --filter-mode exclude \
+  --out-csv ./2024_2025_prod \
+  --out-md  ./2024_2025_prod/2025_report_prod.md
+```
 
-* `.total.clients` (reported)
-* Or “Totals (computed from namespaces)”
+In `exclude` mode:
 
-## Recommended .gitignore
+* excluded namespaces are removed from computed totals and “top” lists
+* the report still prints a “Excluded namespaces” section (so you can show what got removed)
 
-If you do not want input files and generated outputs committed:
+### Mode: highlight (count all, tag non-production)
+
+```bash
+./scripts/diff_clients.sh \
+  --old ./input/activity_counter_2023_2024.txt \
+  --new ./input/activity_counter_2024_2025.txt \
+  --filter ./filter/exclude.json \
+  --filter-mode highlight
+```
+
+In `highlight` mode:
+
+* everything is counted
+* namespaces matching `non_production_namespaces` are tagged `[non-production]`
+* the diff also prints a “Non-production movers” section (largest absolute movers)
+
+## What the “reconciliation” section means
+
+You may see a mismatch where:
+
+* namespace total clients != sum of mount clients
+
+This can happen when there are mounts without a current accessor, deleted mounts, or historical data. The scripts surface this explicitly, including a per-mount breakdown so you can explain the delta.
+
+## Git hygiene
+
+If your input and output files should never be committed, add patterns to `.gitignore`, for example:
 
 ```gitignore
-input/
-2023_2024/
-2024_2025/
-diff/
+input/*
+2023_2024/*
+2024_2025/*
+diff/*
+diff_prod/*
 ```
 
-Note: if files were already committed earlier, `.gitignore` will not remove them from Git history.
-To stop tracking them:
+Important:
 
-```bash
-git rm -r --cached input 2023_2024 2024_2025 diff
-git commit -m "Stop tracking local input and output folders"
-```
+* `.gitignore` only prevents **new** files from being tracked.
+* If something was already committed once, remove it from Git history tracking:
 
-## Quick copy-paste runbook
+  ```bash
+  git rm -r --cached input 2023_2024 2024_2025 diff diff_prod
+  git commit -m "Stop tracking generated vault usage artifacts"
+  ```
 
-```bash
-# 1) Count a single report and export CSVs
-./scripts/count_clients.sh --file ./input/activity_counter_2024_2025.txt --out-csv ./2024_2025
+## Typical workflow
 
-# 2) Count the previous year and export CSVs
-./scripts/count_clients.sh --file ./input/activity_counter_2023_2024.txt --out-csv ./2023_2024
+1. Put activity JSON exports in `./input/`
+2. Run counts for each year (CSV + Markdown)
+3. Run diff for the year-over-year view (CSV + Markdown)
+4. Optionally run filtered “production scope” counts and diffs
+5. Use `summary.csv` for slides, and the Markdown reports for audit trails
 
-# 3) Diff year over year and export CSV + Markdown
-./scripts/diff_clients.sh \
-  --old ./input/activity_counter_2023_2024.txt \
-  --new ./input/activity_counter_2024_2025.txt \
-  --out-csv ./diff \
-  --out-md ./diff/2024_vs_2025.md
-```
+## License
 
-## Troubleshooting
-
-### “jq: error … cannot be sorted”
-
-This usually indicates a jq expression is producing a string instead of an array.
-These scripts use a safe key union pattern:
-
-```jq
-((a|keys) + (b|keys) | unique)
-```
-
-### Script “hangs” or “stalls”
-
-If `jq` is invoked without an input file and without `-n`, it can wait for stdin forever.
-These scripts use `jq -n` when slurping files.
+MIT
