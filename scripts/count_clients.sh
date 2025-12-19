@@ -43,6 +43,8 @@ OUT_CSV_DIR=""
 OUT_MD_PATH=""
 FILTER=""
 FILTER_MODE=""
+ENTITLEMENT=""
+COLOR_MODE="auto" # auto|always|never
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -70,6 +72,18 @@ while [[ $# -gt 0 ]]; do
     FILTER_MODE="${2:-}"
     shift 2
     ;;
+  --entitlement)
+    ENTITLEMENT="${2:-}"
+    shift 2
+    ;;
+  --color)
+    COLOR_MODE="${2:-auto}"
+    shift 2
+    ;;
+  --no-color)
+    COLOR_MODE="never"
+    shift
+    ;;
   --help | -h)
     usage
     exit 0
@@ -82,6 +96,54 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# --- colors (terminal only) ---
+# NO_COLOR convention: https://no-color.org (widely used)
+if [[ -n "${NO_COLOR:-}" ]]; then
+  COLOR_MODE="never"
+fi
+
+C_RESET=""
+C_BOLD=""
+C_DIM=""
+C_RED=""
+C_GREEN=""
+C_YELLOW=""
+C_CYAN=""
+
+init_colors() {
+  local enable="false"
+  case "${COLOR_MODE}" in
+  auto) [[ -t 1 ]] && enable="true" ;;
+  always) enable="true" ;;
+  never) enable="false" ;;
+  *)
+    echo "Error: --color must be auto|always|never (got: ${COLOR_MODE})"
+    exit 2
+    ;;
+  esac
+
+  if [[ "${enable}" == "true" ]]; then
+    C_RESET=$'\e[0m'
+    C_BOLD=$'\e[1m'
+    C_DIM=$'\e[2m'
+    C_RED=$'\e[31m'
+    C_GREEN=$'\e[32m'
+    C_YELLOW=$'\e[33m'
+    C_CYAN=$'\e[36m'
+  fi
+}
+
+init_colors
+JQ_COLOR_ARGS=(
+  --arg C_RESET "${C_RESET}"
+  --arg C_H1 "${C_BOLD}${C_CYAN}"
+  --arg C_KEY "${C_DIM}"
+  --arg C_GOOD "${C_GREEN}"
+  --arg C_WARN "${C_YELLOW}"
+  --arg C_BAD "${C_RED}"
+)
+
+# --- validate inputs ---
 if [[ -z "${FILE}" ]]; then
   echo "Error: --file is required"
   usage
@@ -115,6 +177,13 @@ if [[ -n "${FILTER}" ]]; then
   fi
 fi
 
+if [[ -n "${ENTITLEMENT}" ]]; then
+  if ! [[ "${ENTITLEMENT}" =~ ^[0-9]+$ ]]; then
+    echo "Error: --entitlement must be an integer, got: ${ENTITLEMENT}"
+    exit 2
+  fi
+fi
+
 if [[ -n "${FILTER_MODE}" ]]; then
   case "${FILTER_MODE}" in
   exclude | highlight) ;;
@@ -142,23 +211,63 @@ else
 fi
 
 # Shared jq program pieces are repeated across calls for portability
-
+# jq -r --argjson top "$TOP" "${JQ_FILTER_ARGS[@]}" '
 # -------- Terminal summary --------
-jq -r --argjson top "$TOP" "${JQ_FILTER_ARGS[@]}" '
+jq -r --argjson top "$TOP" --arg entitlement "${ENTITLEMENT}" "${JQ_FILTER_ARGS[@]}" "${JQ_COLOR_ARGS[@]}" \
+  '
+
+  # ---------- formatting ----------
+  def h1($s): ($C_H1 + $s + $C_RESET + "\n");
+  def key($s): ($C_KEY + $s + $C_RESET);
+  def round2: ((. * 100) | round) / 100;
+
   def nz: . // 0;
   def norm_ns: if (.namespace_path | nz) == "" then "root" else .namespace_path end;
 
-  # filter config (always defined)
+  # ---------- entitlement ----------
+  def ent: ($entitlement | tonumber?);
+  def has_ent: (ent != null);
+
+  def ent_status($value):
+    if (has_ent | not) then ""
+    else
+      (($value - ent) as $d
+      | if $d < 0 then "under by " + ((-$d)|tostring)
+        elif $d > 0 then "over by " + ($d|tostring)
+        else "exact match"
+        end)
+    end;
+
+  def ent_color($value):
+    if (has_ent | not) then ""
+    else
+      (($value - ent) as $d
+      | if $d < 0 then $C_GOOD
+        elif $d > 0 then $C_BAD
+        else $C_GOOD
+        end)
+    end;
+
+  def ent_block($label; $value):
+    if (has_ent | not) then ""
+    else
+      h1("Entitlement")
+      + "  " + key("entitlement:") + " " + (ent|tostring) + "\n"
+      + "  " + key($label + ":") + " " + ($value|tostring)
+      + " (" + (ent_color($value)) + (ent_status($value)) + $C_RESET + ")\n\n"
+    end;
+
+  # ---------- filter config (always defined) ----------
   def f: (if ($filter_slurp|type) == "array" and ($filter_slurp|length) > 0 then $filter_slurp[0] else {} end);
   def mode_from_file: (f.mode // "exclude");
   def mode: if ($filter_mode // "") != "" then $filter_mode else mode_from_file end;
   def excl: (f.exclude_namespaces // []);
   def nonprod: (f.non_production_namespaces // []);
 
-def matches_any($patterns; $ns):
-  ($patterns | type) == "array"
-  and ($patterns | length) > 0
-  and ($patterns | any(.[]; . as $re | ($ns | test($re))));
+  def matches_any($patterns; $ns):
+    ($patterns | type) == "array"
+    and ($patterns | length) > 0
+    and ($patterns | any(.[]; . as $re | ($ns | test($re))));
 
   def is_excluded($ns): matches_any(excl; $ns);
   def is_nonprod($ns): matches_any(nonprod; $ns);
@@ -169,6 +278,7 @@ def matches_any($patterns; $ns):
   def keep_ns($ns):
     if filter_enabled and mode == "exclude" then (is_excluded($ns) | not) else true end;
 
+  # ---------- rows ----------
   def ns_rows_all:
     (.by_namespace
       | map(
@@ -214,6 +324,7 @@ def matches_any($patterns; $ns):
       | sort_by(.clients) | reverse
     );
 
+  # ---------- totals ----------
   def sum_field($rows; $field):
     ($rows | map(.[$field] | nz) | add // 0);
 
@@ -244,6 +355,7 @@ def matches_any($patterns; $ns):
       secret_syncs:       ((a.secret_syncs       | nz) - (b.secret_syncs       | nz))
     };
 
+  # ---------- reconciliation ----------
   def reconcile_rows:
     ([.by_namespace[] as $ns
       | ($ns | norm_ns) as $name
@@ -260,6 +372,13 @@ def matches_any($patterns; $ns):
       | select(.delta != 0)
     ]);
 
+  def delta_color($d):
+    ( ($d|abs) as $a
+      | if $a == 0 then $C_GOOD
+        elif $a <= 5 then $C_WARN
+        else $C_BAD
+        end);
+
   def reconcile_mounts_for($doc; $ns_name):
     ([$doc.by_namespace[]
       | ($ns_name) as $want
@@ -274,6 +393,7 @@ def matches_any($patterns; $ns):
       | sort_by(.clients) | reverse
     );
 
+  # ---------- months ----------
   def has_months:
     (.months? != null) and ((.months | type) == "array") and ((.months | length) > 0);
 
@@ -285,6 +405,7 @@ def matches_any($patterns; $ns):
         new_clients: (.new_clients.counts.clients | nz)
       });
 
+  # ---------- build doc ----------
   . as $doc
   | (ns_rows_all) as $ns_all
   | (ns_rows_filtered) as $ns_rows
@@ -298,78 +419,89 @@ def matches_any($patterns; $ns):
   | ($ns_all | map(select(.excluded)) ) as $excluded_rows
   | (reconcile_rows) as $recon
 
+  | (if has_months then (months_rows | map(.clients) | max // 0) else 0 end) as $monthly_peak
+  | (if has_months then (months_rows | map(.clients) | min // 0) else 0 end) as $monthly_min
+  | (if has_months then (months_rows | map(.clients) | add // 0) else 0 end) as $monthly_sum
+  | (if has_months then (months_rows | length) else 0 end) as $monthly_n
+  | (if has_months and $monthly_n > 0 then ($monthly_sum / $monthly_n) else 0 end) as $monthly_avg
+
   | (
       (if filter_enabled then
-        "Filter\n"
-        + "  mode: " + (mode|tostring) + "\n"
-        + "  exclude_namespaces: " + (excl|tostring) + "\n"
-        + "  non_production_namespaces: " + (nonprod|tostring) + "\n\n"
-      else "" end) +
+        h1("Filter")
+        + "  " + key("mode:") + " " + (mode|tostring) + "\n"
+        + "  " + key("exclude_namespaces:") + " " + (excl|tostring) + "\n"
+        + "  " + key("non_production_namespaces:") + " " + (nonprod|tostring) + "\n\n"
+      else "" end)
 
-      "File summary\n"
-      + "  start_time:   " + ($doc.start_time | tostring) + "\n"
-      + "  namespaces:   " + ($ns_count | tostring) + "\n"
-      + "  mounts:       " + ($mount_count | tostring) + "\n\n"
+      + h1("File summary")
+      + "  " + key("start_time:") + " " + ($doc.start_time | tostring) + "\n"
+      + "  " + key("namespaces:") + " " + ($ns_count | tostring) + "\n"
+      + "  " + key("mounts:") + " " + ($mount_count | tostring) + "\n\n"
 
-      + "Totals (computed from namespaces" + (if filter_enabled and mode=="exclude" then ", filtered" else "" end) + ")\n"
-      + "  clients:            " + ($ns_tot.clients | tostring) + "\n"
-      + "  entity_clients:     " + ($ns_tot.entity_clients | tostring) + "\n"
-      + "  non_entity_clients: " + ($ns_tot.non_entity_clients | tostring) + "\n"
-      + "  acme_clients:       " + ($ns_tot.acme_clients | tostring) + "\n"
-      + "  secret_syncs:       " + ($ns_tot.secret_syncs | tostring) + "\n\n"
+      + (ent_block("selected_scope_clients"; ($ns_tot.clients // 0)))
 
-      + "Totals (computed from mounts" + (if filter_enabled and mode=="exclude" then ", filtered" else "" end) + ")\n"
-      + "  clients:            " + ($m_tot.clients | tostring) + "\n"
-      + "  entity_clients:     " + ($m_tot.entity_clients | tostring) + "\n"
-      + "  non_entity_clients: " + ($m_tot.non_entity_clients | tostring) + "\n"
-      + "  acme_clients:       " + ($m_tot.acme_clients | tostring) + "\n"
-      + "  secret_syncs:       " + ($m_tot.secret_syncs | tostring) + "\n\n"
+      + h1("Totals (computed from namespaces" + (if filter_enabled and mode=="exclude" then ", filtered" else "" end) + ")")
+      + "  " + key("clients:") + " " + ($ns_tot.clients | tostring) + "\n"
+      + "  " + key("entity_clients:") + " " + ($ns_tot.entity_clients | tostring) + "\n"
+      + "  " + key("non_entity_clients:") + " " + ($ns_tot.non_entity_clients | tostring) + "\n"
+      + "  " + key("acme_clients:") + " " + ($ns_tot.acme_clients | tostring) + "\n"
+      + "  " + key("secret_syncs:") + " " + ($ns_tot.secret_syncs | tostring) + "\n\n"
 
-      + "Totals (reported in file: .total)\n"
-      + "  clients:            " + (($reported.clients | nz) | tostring) + "\n"
-      + "  entity_clients:     " + (($reported.entity_clients | nz) | tostring) + "\n"
-      + "  non_entity_clients: " + (($reported.non_entity_clients | nz) | tostring) + "\n"
-      + "  acme_clients:       " + (($reported.acme_clients | nz) | tostring) + "\n"
-      + "  secret_syncs:       " + (($reported.secret_syncs | nz) | tostring) + "\n\n"
+      + h1("Totals (computed from mounts" + (if filter_enabled and mode=="exclude" then ", filtered" else "" end) + ")")
+      + "  " + key("clients:") + " " + ($m_tot.clients | tostring) + "\n"
+      + "  " + key("entity_clients:") + " " + ($m_tot.entity_clients | tostring) + "\n"
+      + "  " + key("non_entity_clients:") + " " + ($m_tot.non_entity_clients | tostring) + "\n"
+      + "  " + key("acme_clients:") + " " + ($m_tot.acme_clients | tostring) + "\n"
+      + "  " + key("secret_syncs:") + " " + ($m_tot.secret_syncs | tostring) + "\n\n"
 
-      + "Validation (computed minus reported)\n"
-      + "  namespaces - reported: " + (diff($ns_tot_unfiltered; $reported) | tostring) + "\n"
-      + "  mounts     - reported: " + (diff($m_tot; $reported) | tostring) + "\n\n"
+      + h1("Totals (reported in file: .total)")
+      + "  " + key("clients:") + " " + (($reported.clients | nz) | tostring) + "\n"
+      + "  " + key("entity_clients:") + " " + (($reported.entity_clients | nz) | tostring) + "\n"
+      + "  " + key("non_entity_clients:") + " " + (($reported.non_entity_clients | nz) | tostring) + "\n"
+      + "  " + key("acme_clients:") + " " + (($reported.acme_clients | nz) | tostring) + "\n"
+      + "  " + key("secret_syncs:") + " " + (($reported.secret_syncs | nz) | tostring) + "\n\n"
+
+      + h1("Validation (computed minus reported)")
+      + "  " + key("namespaces - reported:") + " " + (diff($ns_tot_unfiltered; $reported) | tostring) + "\n"
+      + "  " + key("mounts     - reported:") + " " + (diff($m_tot; $reported) | tostring) + "\n\n"
 
       + (if filter_enabled and mode=="exclude" and ($excluded_rows|length)>0 then
-          "Excluded namespaces (top " + ($top|tostring) + " by clients)\n"
+          h1("Excluded namespaces (top " + ($top|tostring) + " by clients)")
           + (
             ($excluded_rows | sort_by(.clients) | reverse)[0:$top]
-            | map("  - " + .namespace + "  clients=" + (.clients|tostring))
+            | map("  - " + .namespace + "  " + key("clients=") + (.clients|tostring))
             | join("\n")
           ) + "\n\n"
         else "" end)
 
-      + "Reconciliation (namespaces where mounts_sum != namespace_total)\n"
+      + h1("Reconciliation (namespaces where mounts_sum != namespace_total)")
       + (
           if ($recon|length) == 0 then "  - none\n\n"
           else (
             ($recon | sort_by(.delta) | reverse)[0:$top]
-            | map("  - " + .namespace
-                  + "  namespace=" + (.namespace_clients|tostring)
-                  + "  mounts_sum=" + (.mounts_clients_sum|tostring)
-                  + "  delta=" + (.delta|tostring)
-                  + "  mounts=" + (.mounts|tostring))
+            | map(
+                "  - " + .namespace
+                + "  " + key("namespace=") + (.namespace_clients|tostring)
+                + "  " + key("mounts_sum=") + (.mounts_clients_sum|tostring)
+                + "  " + key("delta=") + (delta_color(.delta)) + (.delta|tostring) + $C_RESET
+                + "  " + key("mounts=") + (.mounts|tostring)
+              )
             | join("\n")
           ) + "\n\n"
         end
 
       + (if ($recon|length) > 0 then
-          "Reconciliation details\n"
+          h1("Reconciliation details")
           + (
             ($recon | sort_by(.delta) | reverse)[0:$top]
             | map(
-                "  - " + .namespace + "  delta=" + (.delta|tostring)
+                "  - " + .namespace
+                + "  " + key("delta=") + (delta_color(.delta)) + (.delta|tostring) + $C_RESET
                 + " (namespace=" + (.namespace_clients|tostring)
                 + ", mounts_sum=" + (.mounts_clients_sum|tostring) + ")\n"
                 + (
                   (reconcile_mounts_for($doc; .namespace))
-                  | map("    * " + .mount_path + " (" + .mount_type + ") clients=" + (.clients|tostring))
+                  | map("    * " + .mount_path + " (" + .mount_type + ") " + key("clients=") + (.clients|tostring))
                   | join("\n")
                 )
               )
@@ -377,37 +509,43 @@ def matches_any($patterns; $ns):
           ) + "\n\n"
         else "" end)
 
-      + ("Top namespaces by clients (top " + ($top|tostring) + ")\n")
+      + h1("Top namespaces by clients (top " + ($top|tostring) + ")")
       + (
         $ns_rows[0:$top]
         | map(
             "  - " + .namespace
-            + (if filter_enabled and mode=="highlight" and .non_production then "  [non-production]" else "" end)
-            + "  clients=" + (.clients|tostring)
-            + "  mounts=" + (.mounts|tostring)
+            + (if filter_enabled and mode=="highlight" and .non_production then "  " + $C_WARN + "[non-production]" + $C_RESET else "" end)
+            + "  " + key("clients=") + (.clients|tostring)
+            + "  " + key("mounts=") + (.mounts|tostring)
           )
         | join("\n")
       ) + "\n\n"
 
-      + ("Top mounts by clients (top " + ($top|tostring) + ")\n")
+      + h1("Top mounts by clients (top " + ($top|tostring) + ")")
       + (
         $mount_rows[0:$top]
         | map(
             "  - " + .namespace
-            + (if filter_enabled and mode=="highlight" and .namespace_non_production then "  [non-production]" else "" end)
+            + (if filter_enabled and mode=="highlight" and .namespace_non_production then "  " + $C_WARN + "[non-production]" + $C_RESET else "" end)
             + "  " + .mount_path + " (" + .mount_type + ")"
-            + "  clients=" + (.clients|tostring)
+            + "  " + key("clients=") + (.clients|tostring)
           )
         | join("\n")
       ) + "\n\n"
 
       + (if has_months then
-          "Monthly checks (from .months)\n"
-          + "  clients:\n"
-          + (months_rows | map("    - " + .time + "  clients=" + (.clients|tostring)) | join("\n")) + "\n\n"
-          + "  new_clients:\n"
-          + (months_rows | map("    - " + .time + "  new_clients=" + (.new_clients|tostring)) | join("\n")) + "\n\n"
+          h1("Monthly checks (from .months)")
+          + "  " + key("clients:") + "\n"
+          + (months_rows | map("    - " + .time + "  " + key("clients=") + (.clients|tostring)) | join("\n")) + "\n\n"
+          + "  " + key("client_stats:") + "\n"
+          + "    - " + key("monthly_peak_clients:") + " " + ($monthly_peak|tostring) + "\n"
+          + "    - " + key("monthly_min_clients:") + " " + ($monthly_min|tostring) + "\n"
+          + "    - " + key("monthly_avg_clients:") + " " + (($monthly_avg|round2)|tostring) + "\n\n"
+          + "  " + key("new_clients:") + "\n"
+          + "    - " + key("total_new_clients:") + " " + ((months_rows | map(.new_clients) | add // 0) | tostring) + "\n"
+          + "    - " + key("annual_unique_clients:") + " " + (($reported.clients | nz) | tostring) + "\n\n"
         else "" end)
+
     )
   )
 ' "$FILE"
@@ -631,10 +769,25 @@ fi
 
 # -------- Markdown export (filtered if filter-mode=exclude, highlights if highlight) --------
 if [[ -n "${OUT_MD_PATH}" ]]; then
-  jq -r --argjson top "$TOP" "${JQ_FILTER_ARGS[@]}" '
+  jq -r --argjson top "$TOP" --arg entitlement "${ENTITLEMENT}" "${JQ_FILTER_ARGS[@]}" '
     def nz: . // 0;
     def norm_ns: if (.namespace_path | nz) == "" then "root" else .namespace_path end;
 
+    # ---------- entitlement ----------
+    def ent: ($entitlement | tonumber?);
+    def has_ent: (ent != null);
+
+    def ent_status($value):
+      if (has_ent | not) then ""
+      else
+        (($value - ent) as $d
+        | if $d < 0 then "under by " + ((-$d)|tostring)
+          elif $d > 0 then "over by " + ($d|tostring)
+          else "exact match"
+          end)
+      end;
+
+    # ---------- filter config ----------
     def f: (if ($filter_slurp|type) == "array" and ($filter_slurp|length) > 0 then $filter_slurp[0] else {} end);
     def mode_from_file: (f.mode // "exclude");
     def mode: if ($filter_mode // "") != "" then $filter_mode else mode_from_file end;
@@ -642,10 +795,9 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
     def nonprod: (f.non_production_namespaces // []);
 
     def matches_any($patterns; $ns):
-  ($patterns | type) == "array"
-  and ($patterns | length) > 0
-  and ($patterns | any(.[]; . as $re | ($ns | test($re))));
-
+      ($patterns | type) == "array"
+      and ($patterns | length) > 0
+      and ($patterns | any(.[]; . as $re | ($ns | test($re))));
 
     def is_excluded($ns): matches_any(excl; $ns);
     def is_nonprod($ns): matches_any(nonprod; $ns);
@@ -656,6 +808,7 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
     def keep_ns($ns):
       if filter_enabled and mode == "exclude" then (is_excluded($ns) | not) else true end;
 
+    # ---------- totals ----------
     def totals_from_namespaces:
       {
         clients:            (.by_namespace | map((norm_ns) as $n | select(keep_ns($n)) | (.counts.clients            | nz)) | add // 0),
@@ -674,6 +827,7 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
         secret_syncs:       (.by_namespace | map((norm_ns) as $n | select(keep_ns($n)) | (.mounts[]? | .counts.secret_syncs       | nz)) | add // 0)
       };
 
+    # ---------- rows ----------
     def ns_rows:
       (.by_namespace
         | map({
@@ -702,6 +856,7 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
         | sort_by(.clients) | reverse
       );
 
+    # ---------- reconciliation ----------
     def reconcile_rows:
       (.by_namespace
         | map(
@@ -748,6 +903,26 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
           }
       ]);
 
+    # ---------- months ----------
+    def has_months:
+      (.months? != null) and ((.months | type) == "array") and ((.months | length) > 0);
+
+    def months_rows:
+      (.months // [])
+      | map({
+          time: (.timestamp | tostring),
+          clients: (.counts.clients | nz),
+          new_clients: (.new_clients.counts.clients | nz)
+        });
+
+    def monthly_peak($rows): ($rows | map(.clients) | max // 0);
+    def monthly_min($rows):  ($rows | map(.clients) | min // 0);
+    def monthly_avg($rows):
+      ( ($rows | length) as $n
+        | if $n == 0 then 0
+          else ((($rows | map(.clients) | add // 0) / $n) * 100 | round) / 100
+          end );
+
     . as $doc
     | (totals_from_namespaces) as $ns_tot
     | (totals_from_mounts) as $m_tot
@@ -758,6 +933,8 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
     | (mount_rows) as $m
     | (reconcile_rows) as $r
     | (reconcile_details) as $rd
+    | (months_rows) as $mo
+    | ($ns_tot.clients // 0) as $selected
 
     | (
       "# Vault client count report\n\n" +
@@ -772,7 +949,12 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
       "## Summary\n\n" +
       "- start_time: `" + ($doc.start_time | tostring) + "`\n" +
       "- namespaces: `" + ($ns_count | tostring) + "`\n" +
-      "- mounts: `" + ($mount_count | tostring) + "`\n\n" +
+      "- mounts: `" + ($mount_count | tostring) + "`\n" +
+      (if has_ent then
+        "- entitlement: `" + (ent|tostring) + "`\n"
+        + "- selected_scope_clients: `" + ($selected|tostring) + "` (" + (ent_status($selected)) + ")\n"
+      else "" end) +
+      "\n" +
 
       "## Totals\n\n" +
       "| Source | clients | entity_clients | non_entity_clients | acme_clients | secret_syncs |\n" +
@@ -830,10 +1012,39 @@ if [[ -n "${OUT_MD_PATH}" ]]; then
               + (if filter_enabled and mode=="highlight" and .namespace_non_production then " *(non-production)*" else "" end)
               + " | " + .mount_path + " | " + .mount_type + " | " + (.clients|tostring) + " |")
         | join("\n")
-      ) + "\n"
+      ) + "\n\n" +
+
+      (if has_months then
+        "## Monthly checks\n\n"
+        
+        + "_Interpretation:_\n"
+        + "- **Clients** is the monthly active unique client count.\n"
+        + "- **annual_unique_clients** is the unique count across the full reporting window.\n"
+        + "- So “~450” usually refers to **monthly_peak_clients** (" + (monthly_peak($mo)|tostring) + "), "
+        + "not the annual total (" + (($reported.clients|nz)|tostring) + ").\n\n"
+
+        + "### Clients\n\n"
+        + "| month | clients |\n"
+        + "|---|---:|\n"
+        + (
+          $mo
+          | map("| " + .time + " | " + (.clients|tostring) + " |")
+          | join("\n")
+        ) + "\n\n"
+
+        + "### Client stats\n\n"
+        + "- monthly_peak_clients: `" + (monthly_peak($mo)|tostring) + "`\n"
+        + "- monthly_min_clients: `" + (monthly_min($mo)|tostring) + "`\n"
+        + "- monthly_avg_clients: `" + (monthly_avg($mo)|tostring) + "`\n\n"
+
+        + "### New clients\n\n"
+        + "- total_new_clients: `" + (($mo | map(.new_clients) | add // 0) | tostring) + "`\n"
+        + "- annual_unique_clients: `" + (($reported.clients | nz) | tostring) + "`\n\n"
+      else "" end)
     )
   ' "$FILE" >"${OUT_MD_PATH}"
 
   echo "✅ Wrote Markdown: ${OUT_MD_PATH}"
 fi
+
 # -------- Text summary --------

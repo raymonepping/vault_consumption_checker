@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "docx": "^9.5.1",
+    "markdown-it": "^14.1.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.7.4"
+  }
+}
