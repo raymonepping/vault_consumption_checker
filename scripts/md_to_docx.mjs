@@ -386,10 +386,10 @@ const footerDefault = new Footer({
     new Paragraph({
       alignment: AlignmentType.RIGHT,
       children: [
-        new TextRun({ text: "Page ", font: FONT_BODY }),
-        PageNumber.CURRENT,
-        new TextRun({ text: " of ", font: FONT_BODY }),
-        PageNumber.TOTAL_PAGES,
+        new TextRun({
+          font: FONT_BODY,
+          children: ["Page ", PageNumber.CURRENT, " of ", PageNumber.TOTAL_PAGES],
+        }),
       ],
     }),
   ],
