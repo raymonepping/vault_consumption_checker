@@ -1,0 +1,91 @@
+#compdef vcc
+
+_vcc_profiles() {
+  local cfg profs
+  cfg="/Users/raymon.epping/Documents/VSC/MacOS_Environment/vault_consumption_checker/config/vcc.config.json"
+
+  if command -v jq >/dev/null 2>&1 && [[ -f "$cfg" ]]; then
+    profs=(${(f)"$(jq -r '.profiles | keys[]' "$cfg" 2>/dev/null)"})
+    (( ${#profs[@]} )) && _values "profile" $profs && return
+  fi
+
+  _values "profile" default prod
+}
+
+_vcc() {
+  local cmd
+
+  if (( CURRENT == 2 )); then
+    _values "command" \
+      'all[run analyze(new) + count(old) + count(new) + diff(old,new)]' \
+      'analyze[run analyze_namespaces.sh]' \
+      'count[run count_clients.sh]' \
+      'diff[run diff_clients.sh]' \
+      'completions[show or install shell completions]' \
+      'help[show help]'
+    return
+  fi
+
+  cmd="${words[2]}"
+
+  case "${cmd}" in
+    count)
+      _arguments -C \
+        '--file=[Activity counter export file]:file:_files' \
+        '--top=[Top N rows]:number:' \
+        '--out-csv=[Output directory for CSV files]:dir:_files -/' \
+        '--out-md=[Output markdown report path]:file:_files' \
+        '--entitlement=[Entitlement number]:number:' \
+        '--filter=[Filter json path]:file:_files' \
+        '--filter-mode=[Filter mode]:mode:(exclude highlight)' \
+        '-h[Help]' '--help[Help]'
+      ;;
+    analyze)
+      _arguments -C \
+        '--file=[Activity counter export file]:file:_files' \
+        '--out-dir=[Output directory]:dir:_files -/' \
+        '--top=[Top N rows]:number:' \
+        '--suggest-threshold=[Percent threshold]:percent:' \
+        '--emit-filter=[Emit starter exclude.json]:bool:(true false)' \
+        '--filter-out=[Where to write filter json]:file:_files' \
+        '-h[Help]' '--help[Help]'
+      ;;
+    diff)
+      _arguments -C \
+        '--old=[Old activity counter export file]:file:_files' \
+        '--new=[New activity counter export file]:file:_files' \
+        '--out-csv=[Output directory for CSV files]:dir:_files -/' \
+        '--out-md=[Output markdown diff path]:file:_files' \
+        '--filter=[Filter json path]:file:_files' \
+        '--filter-mode=[Filter mode]:mode:(exclude highlight)' \
+        '-h[Help]' '--help[Help]'
+      ;;
+    all)
+      _arguments -C \
+        '--old=[Old activity counter export file]:file:_files' \
+        '--new=[New activity counter export file]:file:_files' \
+        '--out-dir=[Output root directory]:dir:_files -/' \
+        '--top=[Top N rows for analyze]:number:' \
+        '--suggest-threshold=[Suggest threshold for analyze]:percent:' \
+        '--emit-filter=[Emit exclude.json from analyze]:bool:(true false)' \
+        '--filter=[Filter json path]:file:_files' \
+        '--filter-mode=[Filter mode]:mode:(exclude highlight)' \
+        '--entitlement=[Entitlement number]:number:' \
+        '--docx=[Create meeting pack + DOCX conversion]:bool:(true false)' \
+        '--profile=[Profile name]:profile:_vcc_profiles' \
+        '--config=[Config json path]:file:_files' \
+        '-h[Help]' '--help[Help]'
+      ;;
+    completions)
+      _arguments -C \
+        '--install=[Install completions]:bool:(true false)' \
+        '--shell=[Shell type]:shell:(zsh bash)' \
+        '--dest=[Destination directory]:dir:_files -/' \
+        '--rc=[Shell rc file]:file:_files' \
+        '-h[Help]' '--help[Help]'
+      ;;
+    *)
+      _values "command" all analyze count diff completions help
+      ;;
+  esac
+}

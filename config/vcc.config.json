@@ -1,0 +1,28 @@
+{
+  "profiles": {
+    "default": {
+      "top": 25,
+      "suggest_threshold": 10,
+      "emit_filter": true,
+
+      "filter": "./filter/exclude.json",
+      "filter_mode": "exclude",
+
+      "out_dir": "./reports",
+      "docx": false
+    },
+    "prod": {
+      "top": 25,
+      "suggest_threshold": 10,
+      "emit_filter": true,
+
+      "entitlement": 500,
+
+      "filter": "./filter/exclude.json",
+      "filter_mode": "exclude",
+
+      "out_dir": "./reports_prod",
+      "docx": true
+    }
+  }
+}
